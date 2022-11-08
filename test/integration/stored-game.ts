@@ -3,6 +3,7 @@ import {CheckersStargateClient} from "../../src/checkers_stagateclient";
 import {CheckersExtension} from "../../src/modules/checkers/queries";
 import Long from "long";
 import {expect} from "chai";
+import _ from "../../environment"
 
 config()
 

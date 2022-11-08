@@ -2,6 +2,7 @@ import {config} from "dotenv";
 import {CheckersStargateClient} from "../../src/checkers_stagateclient";
 import {CheckersExtension} from "../../src/modules/checkers/queries";
 import {expect} from "chai";
+import _ from "../../environment"
 
 config()
 
