@@ -4,8 +4,12 @@ import {OfflineDirectSigner} from "@cosmjs/proto-signing";
 import {expect} from "chai";
 import {CheckersSigningStargateClient} from "../../src/checkers_signingstargateclient";
 import {CheckersExtension} from "../../src/modules/checkers/queries";
-import {GasPrice} from "@cosmjs/stargate";
+import {DeliverTxResponse, GasPrice} from "@cosmjs/stargate";
 import {askFaucet} from "../../src/util/faucet";
+import Long from "long"
+import {Log} from "@cosmjs/stargate/build/logs";
+import {getCreateGameEvent, getCreateGameId} from "../../src/types/checkers/events";
+import {StoredGame} from "../../src/types/generated/checkers/stored_game";
 
 config()
 
@@ -61,7 +65,48 @@ describe("StoredGame Action", async function () {
     ).to.be.greaterThanOrEqual(bobCredit.token)
   })
 
-  it("Temporary test", async function () {
+  let gameIndex: string
 
+  it("can create game with wager", async function () {
+    this.timeout(5_000)
+    const response: DeliverTxResponse = await aliceClient.createGame(
+      ADDRESS_TEST_ALICE,
+      ADDRESS_TEST_ALICE,
+      ADDRESS_TEST_BOB,
+      "token",
+      Long.fromNumber(1),
+      "auto"
+    )
+    const logs: Log[] = JSON.parse(response.rawLog!)
+    expect(logs).to.be.length(1)
+    gameIndex = getCreateGameId(getCreateGameEvent(logs[0])!)
+    const game: StoredGame = (await checkers.getStoredGame(gameIndex))!
+    expect(game).to.include({
+      index: gameIndex,
+      black: ADDRESS_TEST_ALICE,
+      red: ADDRESS_TEST_BOB,
+      denom: "token",
+    })
+    expect(game.wager.toNumber()).to.equal(1)
+  })
+
+  it("can play first moves and pay wager", async function () {
+    this.timeout(10_000)
+    const aliceBalBefore = parseInt(
+      (await aliceClient.getBalance(ADDRESS_TEST_ALICE, "token")).amount, 10
+    )
+    await aliceClient.playMove(ADDRESS_TEST_ALICE, gameIndex, {x: 1, y: 2}, {x: 2, y: 3}, "auto")
+    const aliceBalAfter = parseInt(
+      (await aliceClient.getBalance(ADDRESS_TEST_ALICE, "token")).amount, 10
+    )
+    expect(aliceBalAfter).to.be.equal(aliceBalBefore - 1)
+    const bobBalBefore = parseInt(
+      (await bobClient.getBalance(ADDRESS_TEST_BOB, "token")).amount, 10
+    )
+    await bobClient.playMove(ADDRESS_TEST_BOB, gameIndex, {x: 0, y: 5}, {x: 1, y: 4}, "auto")
+    const bobBalAfter = parseInt(
+      (await bobClient.getBalance(ADDRESS_TEST_BOB, "token")).amount, 10
+    )
+    expect(bobBalAfter).to.be.equal(bobBalBefore - 1)
   })
 })
