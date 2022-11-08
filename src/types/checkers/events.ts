@@ -30,3 +30,8 @@ export const getCapturedPos = (movePlayedEvent: MovePlayedEvent): Pos | undefine
   if (isNaN(x) || isNaN(y)) return undefined
   return {x, y}
 }
+
+export const getWinner = (movePlayedEvent: MovePlayedEvent): GamePiece | undefined =>
+  movePlayedEvent.attributes.find((attribute: Attribute) => attribute.key == "winner")!.value as
+    | GamePiece
+    | undefined
