@@ -1,5 +1,5 @@
 import {config} from "dotenv";
-import {CheckersStargateClient} from "../../src/checkers_stagateclient";
+import {CheckersStargateClient} from "../../src/checkers_stargateclient";
 import {CheckersExtension} from "../../src/modules/checkers/queries";
 import Long from "long";
 import {expect} from "chai";
