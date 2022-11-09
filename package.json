@@ -4,13 +4,10 @@
   "description": "Client elements for the checkers blockchain",
   "main": "index.js",
   "scripts": {
-    "test": "env TS_NODE_COMPILER_OPTIONS='{\"module\": \"commonjs\" }' mocha --require ts-node/register 'test/**/*.ts'",
-    "start": "react-app-rewired start",
-    "build": "react-app-rewired build",
-    "test-react": "react-app-rewired test --env=jsdom",
-    "eject": "react-scripts eject",
-    "deploy": "ren .\\build\\index.html 200.html & surge .\\build",
-    "indexer-dev": "npx ts-node src/server/index.ts"
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test-react --env=jsdom",
+    "deploy": "ren .\\build\\index.html 200.html & surge .\\build"
   },
   "repository": {
     "type": "git",
