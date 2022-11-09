@@ -1,15 +1,21 @@
+import {toHex} from "@cosmjs/encoding"
 import {config} from "dotenv";
 import {getSignerFromMnemonic} from "../../src/util/signer";
 import {OfflineDirectSigner} from "@cosmjs/proto-signing";
 import {expect} from "chai";
 import {CheckersSigningStargateClient} from "../../src/checkers_signingstargateclient";
 import {CheckersExtension} from "../../src/modules/checkers/queries";
-import {DeliverTxResponse, GasPrice} from "@cosmjs/stargate";
+import {Account, DeliverTxResponse, GasPrice} from "@cosmjs/stargate";
 import {askFaucet} from "../../src/util/faucet";
 import Long from "long"
 import {Log} from "@cosmjs/stargate/build/logs";
 import {getCreateGameEvent, getCreateGameId} from "../../src/types/checkers/events";
 import {StoredGame} from "../../src/types/generated/checkers/stored_game";
+import {completeGame, GameMove, Player} from "../../src/types/checkers/player";
+import {CheckersStargateClient} from "../../src/checkers_stargateclient";
+import {TxRaw} from "cosmjs-types/cosmos/tx/v1beta1/tx"
+import {typeUrlMsgPlayMove} from "../../src/types/checkers/messages";
+import {BroadcastTxSyncResponse} from "@cosmjs/tendermint-rpc";
 
 config()
 
@@ -108,5 +114,87 @@ describe("StoredGame Action", async function () {
       (await bobClient.getBalance(ADDRESS_TEST_BOB, "token")).amount, 10
     )
     expect(bobBalAfter).to.be.equal(bobBalBefore - 1)
+  })
+
+  interface ShortAccountInfo {
+    accountNumber: number
+    sequence: number
+  }
+
+  const getShortAccountInfo = async (who: string): Promise<ShortAccountInfo> => {
+    const accountInfo: Account = (await aliceClient.getAccount(who))!
+    return {
+      accountNumber: accountInfo.accountNumber,
+      sequence: accountInfo.sequence
+    }
+  }
+  const whoseClient = (who: Player) => (who == "b" ? aliceClient : bobClient)
+  const whoseAddress = (who: Player) => (who == "b" ? ADDRESS_TEST_ALICE : ADDRESS_TEST_BOB)
+
+  it("Can continue the game up to before the double capture", async function () {
+    this.timeout(10_000)
+    const client: CheckersStargateClient = await CheckersStargateClient.connect(RPC_URL)
+    const chainId: string = await client.getChainId()
+    const accountInfo = {
+      b: await getShortAccountInfo(ADDRESS_TEST_ALICE),
+      r: await getShortAccountInfo(ADDRESS_TEST_BOB)
+    }
+    const txList: TxRaw[] = []
+    let txIndex: number = 2
+    while (txIndex < 24) {
+      const gameMove: GameMove = completeGame[txIndex]
+      txList.push(
+        await whoseClient(gameMove.player).sign(
+          whoseAddress(gameMove.player),
+          [
+            {
+              typeUrl: typeUrlMsgPlayMove,
+              value: {
+                creator: whoseAddress(gameMove.player),
+                gameIndex: gameIndex,
+                fromX: gameMove.from.x,
+                fromY: gameMove.from.y,
+                toX: gameMove.to.x,
+                toY: gameMove.to.y,
+              }
+            }
+          ],
+          {
+            amount: [{denom: "stake", amount: "0"}],
+            gas: "500000",
+          },
+          `playing move ${txIndex}`,
+          {
+            accountNumber: accountInfo[gameMove.player].accountNumber,
+            sequence: accountInfo[gameMove.player].sequence++,
+            chainId: chainId,
+          }
+        )
+      )
+      txIndex++
+    }
+
+    const hashes: BroadcastTxSyncResponse[] = []
+    txIndex = 0
+    while (txIndex < txList.length - 1) {
+      const txRaw: TxRaw = txList[txIndex]
+      hashes.push(await client.tmBroadcastTxSync(TxRaw.encode(txRaw).finish()))
+      txIndex++
+    }
+    const lastDeliver: DeliverTxResponse = await client.broadcastTx(
+      TxRaw.encode(txList[txList.length - 1]).finish()
+    )
+
+    console.log(
+      txList.length,
+      "transactions included in blocks from",
+      (await client.getTx(toHex(hashes[0].hash)))!.height,
+      "to",
+      lastDeliver.height
+    )
+
+    const game: StoredGame = (await checkers.getStoredGame(gameIndex))!
+    expect(game.board).to.equal(
+      "*b*b***b|**b*b***|***b***r|********|***r****|********|***r****|r*B*r*r*")
   })
 })
