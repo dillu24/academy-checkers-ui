@@ -318,4 +318,27 @@ describe("StoredGame Action", async function () {
       board: ""
     })
   })
+
+  it("can reject a game properly when no moves", async function() {
+    this.timeout(10_000)
+    let response: DeliverTxResponse = await aliceClient.createGame(
+      ADDRESS_TEST_ALICE,
+      ADDRESS_TEST_ALICE,
+      ADDRESS_TEST_BOB,
+      "token",
+      Long.fromNumber(10),
+      "auto"
+    )
+    let logs: Log = JSON.parse(response.rawLog)
+    let gameIndexReject = getCreateGameId(getCreateGameEvent(logs[0])!)
+    response = await aliceClient.rejectGame(ADDRESS_TEST_ALICE, gameIndexReject, "auto")
+    try{
+      await checkers.getStoredGame(gameIndexReject)
+      expect.fail("Expected game to be removed!")
+    } catch (e) {
+      expect(e.toString()).to.equal(
+        "Error: Query failed with (22): rpc error: code = NotFound desc = not found: key not found"
+      )
+    }
+  })
 })
