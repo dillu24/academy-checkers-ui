@@ -9,7 +9,12 @@ import {Account, DeliverTxResponse, GasPrice} from "@cosmjs/stargate";
 import {askFaucet} from "../../src/util/faucet";
 import Long from "long"
 import {Log} from "@cosmjs/stargate/build/logs";
-import {getCreateGameEvent, getCreateGameId} from "../../src/types/checkers/events";
+import {
+  getCapturedPos,
+  getCreateGameEvent,
+  getCreateGameId,
+  getMovePlayedEvent
+} from "../../src/types/checkers/events";
 import {StoredGame} from "../../src/types/generated/checkers/stored_game";
 import {completeGame, GameMove, Player} from "../../src/types/checkers/player";
 import {CheckersStargateClient} from "../../src/checkers_stargateclient";
@@ -196,5 +201,49 @@ describe("StoredGame Action", async function () {
     const game: StoredGame = (await checkers.getStoredGame(gameIndex))!
     expect(game.board).to.equal(
       "*b*b***b|**b*b***|***b***r|********|***r****|********|***r****|r*B*r*r*")
+  })
+
+  it("can send a double move and create a game", async function() {
+    this.timeout(5_000)
+    const firstCaptureMove: GameMove = completeGame[24]
+    const secondCaptureMove: GameMove = completeGame[25]
+    const response: DeliverTxResponse = await aliceClient.signAndBroadcast(
+      ADDRESS_TEST_ALICE,
+      [
+        {
+          typeUrl: typeUrlMsgPlayMove,
+          value: {
+            creator: ADDRESS_TEST_ALICE,
+            gameIndex: gameIndex,
+            fromX: firstCaptureMove.from.x,
+            fromY: firstCaptureMove.from.y,
+            toX: firstCaptureMove.to.x,
+            toY: firstCaptureMove.to.y,
+          },
+        },
+        {
+          typeUrl: typeUrlMsgPlayMove,
+          value: {
+            creator: ADDRESS_TEST_ALICE,
+            gameIndex: gameIndex,
+            fromX: secondCaptureMove.from.x,
+            fromY: secondCaptureMove.from.y,
+            toX: secondCaptureMove.to.x,
+            toY: secondCaptureMove.to.y,
+          },
+        }
+      ],
+      "auto"
+    )
+    const logs: Log[] = JSON.parse(response.rawLog!)
+    expect(logs).to.be.length(2)
+    expect(getCapturedPos(getMovePlayedEvent(logs[0])!)).to.deep.equal({
+      x: 3,
+      y: 6,
+    })
+    expect(getCapturedPos(getMovePlayedEvent(logs[1])!)).to.deep.equal({
+      x: 3,
+      y: 4,
+    })
   })
 })
