@@ -21,7 +21,6 @@ import {CheckersStargateClient} from "../../src/checkers_stargateclient";
 import {TxRaw} from "cosmjs-types/cosmos/tx/v1beta1/tx"
 import {typeUrlMsgPlayMove} from "../../src/types/checkers/messages";
 import {BroadcastTxSyncResponse} from "@cosmjs/tendermint-rpc";
-import exp from "constants";
 
 config()
 
