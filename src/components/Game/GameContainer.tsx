@@ -1,5 +1,4 @@
 import Lockr from "lockr";
-import QueryString from "query-string";
 import React, { Component } from "react";
 import { IGameInfo, IPlayerInfo, Position } from "../../sharedTypes";
 import MoveTree, { Player } from "../../util/MoveTree";
@@ -7,10 +6,13 @@ import Board from "./Board/Board";
 import BoardMenu from "./BoardMenu/BoardMenu";
 import ScoreBar from "./BoardMenu/ScoreBar";
 import GameOverModal from "./GameOverModal";
+import {CheckersStargateClient} from "../../checkers_stargateclient";
+import {} from "../../types/checkers/extensions-gui"
 
 interface IGameContainerProps {
-    location: any;
+    location: any
     index: string
+    rpcUrl: string
 }
 
 interface IGameContainerState {
@@ -25,6 +27,7 @@ interface IGameContainerState {
         [key: string]: boolean;
     };
     [key: string]: any;
+    client: CheckersStargateClient | undefined
 }
 
 export default class GameContainer extends Component<
@@ -47,7 +50,8 @@ export default class GameContainer extends Component<
             name: "Player 2",
             score: 0
         },
-        selected: {}
+        selected: {},
+        client: undefined
     };
     constructor(props: IGameContainerProps) {
         super(props);
@@ -56,58 +60,52 @@ export default class GameContainer extends Component<
         this.updateName = this.updateName.bind(this);
     }
 
-    public componentDidMount(): void {
+    public async componentDidMount(): Promise<void> {
         // Allow a player to make a move by double-clicking the screen.
         // This is mainly for touchscreen users.
         window.addEventListener("dblclick", this.makeMove);
-
-        const savedGames: IGameInfo[] = Lockr.get("saved_games") || [];
-        const querys: any = QueryString.parse(this.props.location.search);
-
-        if (querys.newGame === "true") {
-            Lockr.set("saved_games", savedGames.slice(1));
+        await this.loadGame()
+    }
+    public async loadGame(): Promise<void> {
+        const game: IGameInfo | undefined = await (await this.getStargateClient()).getGuiGame(
+          this.props.index)
+        if (!game) {
+            alert("Game does not exist!")
+            return
         }
-
-        let index: number = parseInt(this.props.index, 10)
-
-        if (isNaN(index) || index < 0 || index >= savedGames.length) {
-            index = 0;
-        }
-
-        if (index === 0 && savedGames.length === 0) {
-            return;
-        }
-        const game: IGameInfo = savedGames[index];
-
         this.setState({
             board: new MoveTree(game.board, game.turn, 5),
             created: game.created,
-            isSaved: !querys.newGame,
+            isSaved: true,
             last: game.last,
             p1: {
                 is_ai: game.p1.is_ai,
                 name: game.p1.name,
-                score: game.p1.score
+                score: game.p1.score,
             },
             p2: {
                 is_ai: game.p2.is_ai,
                 name: game.p2.name,
-                score: game.p2.score
-            }
-        });
+                score: game.p2.score,
+            },
+        })
 
         if (this.currentPlayerIsAI()) {
-            const selected = Object.create(null);
-            this.state.board
-                .getBestMove()
-                .forEach(([row, col]) => (selected[`${row},${col}`] = true));
+            const selected = Object.create(null)
+            this.state.board.getBestMove().forEach(([row, col]) => (selected[`${row},${col}`] = true))
             this.setState({ selected }, () => {
-                window.setTimeout(this.makeMove, 750);
-            });
+                window.setTimeout(this.makeMove, 750)
+            })
         }
     }
     public componentWillUnmount() {
         window.removeEventListener("dblclick", this.makeMove);
+    }
+    protected async getStargateClient(): Promise<CheckersStargateClient>{
+        const client: CheckersStargateClient =
+          this.state.client ?? (await CheckersStargateClient.connect(this.props.rpcUrl))
+        if (!this.state.client) this.setState({client: client})
+        return client
     }
     public currentPlayerIsAI(): boolean {
         const player: Player = this.state.board.current_player;
