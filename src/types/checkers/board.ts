@@ -1,6 +1,6 @@
 import {Player} from "./player";
 import {StoredGame} from "../generated/checkers/stored_game";
-import {IGameInfo, IPlayerInfo} from "../../sharedTypes";
+import {IGameInfo} from "../../sharedTypes";
 
 const rowSeparator = "|"
 export const pieceTranslator = {
