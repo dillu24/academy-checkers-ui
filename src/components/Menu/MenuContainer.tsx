@@ -4,6 +4,7 @@ import React, { Component } from "react";
 import { IGameInfo } from "../../sharedTypes";
 import Menu from "./Menu";
 import {CheckersStargateClient} from "../../checkers_stargateclient";
+import {} from "../../types/checkers/extensions-gui"
 
 // declare const localStorageSupport: boolean;
 // declare var gameToLoad: boolean | null;
@@ -37,22 +38,14 @@ export default class MenuContainer extends Component<
         this.dismissAlert = this.dismissAlert.bind(this);
         this.openModal = this.openModal.bind(this);
     }
-    public componentDidMount(): void {
+    public async componentDidMount(): Promise<void> {
         const queries = QueryString.parse(this.props.location.search);
         if (queries.newGame) {
             this.setState({ showModal: true });
         }
-        if (typeof Storage === "undefined") {
-            // tslint:disable-next-line:no-console
-            console.warn(
-                "This browser does not support localstroage. You will be unable to save games."
-            );
-            this.setState({ showAlert: true });
-        }
-        // gameToLoad = null;
         this.setState({
-            saved: Lockr.get("saved_games") || []
-        });
+            saved: await (await this.getStargateClient()).getGuiGames()
+        })
     }
     protected async getStargateClient(): Promise<CheckersStargateClient> {
       const client: CheckersStargateClient =
