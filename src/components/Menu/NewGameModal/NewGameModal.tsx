@@ -1,6 +1,4 @@
-import Lockr from "lockr";
 import React, {Component, CSSProperties} from "react";
-import {Link} from "react-router-dom";
 import {
   Alert,
   Button,
@@ -13,7 +11,6 @@ import {
   Row
 } from "reactstrap";
 
-import {IGameInfo} from "../../../sharedTypes";
 import "./NewGame.css";
 import PlayerAiCheckbox from "./PlayerAiCheckbox";
 import PlayerNameInput from "./PlayerNameInput";
@@ -22,6 +19,7 @@ import {Window as KeplrWindow} from "@keplr-wallet/types"
 import {checkersChainId, getCheckersChainInfo} from "../../../types/checkers/chain";
 import {OfflineSigner} from "@cosmjs/proto-signing";
 import {GasPrice} from "@cosmjs/stargate";
+import {} from "src/types/checkers/extensions-gui"
 
 declare global {
   interface Window extends KeplrWindow {
@@ -151,17 +149,11 @@ export default class NewGameModal extends Component<INewGameModalProps,
           </Alert>
         </ModalBody>
         <ModalFooter>
-          <Link
-            to={{
-              pathname: "/play/0",
-              search: "?newGame=true"
-            }}
-            style={this.linkStyles}
-            onClick={this.handleSubmit}>
+          <div style={this.linkStyles} onClick={this.handleSubmit}>
             <Button color="success" size="lg">
               Play Game!
             </Button>
-          </Link>
+          </div>
           <Button color="danger" size="lg" onClick={this.props.close}>
             Cancel
           </Button>
@@ -170,7 +162,7 @@ export default class NewGameModal extends Component<INewGameModalProps,
     );
   }
 
-  private handleSubmit(event: any): void {
+  private async handleSubmit(event: any): Promise<void> {
     if (
       this.p1NameRef.current &&
       this.p2NameRef.current &&
@@ -204,26 +196,10 @@ export default class NewGameModal extends Component<INewGameModalProps,
       }
 
       if (p1Valid && p2Valid) {
-        const info: IGameInfo = {
-          board: null,
-          created: new Date(),
-          isNewGame: true,
-          last: new Date(),
-          p1: {
-            is_ai: this.p1AIRef.current.state.checked,
-            name: p1Name,
-            score: 0
-          },
-          p2: {
-            is_ai: this.p2AIRef.current.state.checked,
-            name: p2Name,
-            score: 0
-          },
-          turn: 1
-        };
-        const saved: IGameInfo[] = Lockr.get("saved_games") || [];
-        Lockr.set("saved_games", [info, ...saved]);
+        const {creator, signingClient} = await this.getSigningStargateClient()
+        const index: string = await signingClient.createGuiGame(creator, p1Name, p2Name)
         this.props.close();
+        window.location.replace(`/play/${index}`)
       } else {
         event.preventDefault();
       }

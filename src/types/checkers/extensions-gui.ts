@@ -4,12 +4,22 @@ import {storedToGameInfo} from "./board";
 import Long from "long";
 import {AllStoredGameResponse} from "../../modules/checkers/queries";
 import {StoredGame} from "../generated/checkers/stored_game";
+import {CheckersSigningStargateClient} from "../../checkers_signingstargateclient";
+import {DeliverTxResponse} from "@cosmjs/stargate";
+import {Log} from "@cosmjs/stargate/build/logs";
+import {getCreateGameEvent, getCreateGameId} from "./events";
 
 declare module "../../checkers_stargateclient" {
   interface CheckersStargateClient {
     getGuiGames(): Promise<IGameInfo[]>
 
     getGuiGame(index: string): Promise<IGameInfo | undefined>
+  }
+}
+
+declare module "../../checkers_signingstargateclient" {
+  interface CheckersSigningStargateClient {
+    createGuiGame(creator: string, black: string, red: string): Promise<string>
   }
 }
 
@@ -40,3 +50,14 @@ CheckersStargateClient.prototype.getGuiGame =
     if (!storedGame) return undefined
     return storedToGameInfo(storedGame)
   }
+
+CheckersSigningStargateClient.prototype.createGuiGame = async function (
+  creator: string,
+  black: string,
+  red: string
+): Promise<string> {
+  const result: DeliverTxResponse = await this.createGame(creator, black, red, "stake", Long.ZERO,
+    "auto")
+  const logs: Log[] = JSON.parse(result.rawLog!)
+  return getCreateGameId(getCreateGameEvent(logs[0])!)
+}
