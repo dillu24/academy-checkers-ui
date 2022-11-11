@@ -1,7 +1,11 @@
 import { writeFile } from "fs/promises"
 import { Server } from "http"
-import * as express from "express"
+import express, { Express, Request, Response } from "express"
 import { DbType } from "./types"
+import { config } from "dotenv"
+import { CheckersStargateClient } from "../checkers_stargateclient"
+
+config()
 
 export const createIndexer = async () => {
   const port = "3001"
@@ -9,15 +13,17 @@ export const createIndexer = async () => {
   const db: DbType = require(dbFile)
   const pollIntervalMs = 5_000 // 5 seconds
   let timer: NodeJS.Timer | undefined
+  let client: CheckersStargateClient
 
-  const app: express.Express = express()
-  app.get("/", (req: express.Request, res: express.Response) => {
+
+  const app: Express = express()
+  app.get("/", (req: Request, res: Response) => {
     res.send({
       error: "Not implemented",
     })
   })
 
-  app.get("/status", (req: express.Request, res: express.Response) => {
+  app.get("/status", (req: Request, res: Response) => {
     res.json({
       block: {
         height: db.status.block.height,
@@ -25,18 +31,18 @@ export const createIndexer = async () => {
     })
   })
 
-  app.get("/players/:playerAddress", (req: express.Request, res: express.Response) => {
+  app.get("/players/:playerAddress", (req: Request, res: Response) => {
     res.json({
       gameCount: db.players[req.params.playerAddress]?.gameIds?.length ?? 0,
       gameIds: db.players[req.params.playerAddress]?.gameIds ?? [],
     })
   })
 
-  app.get("/players/:playerAddress/gameIds", (req: express.Request, res: express.Response) => {
+  app.get("/players/:playerAddress/gameIds", (req: Request, res: Response) => {
     res.json(db.players[req.params.playerAddress]?.gameIds ?? [])
   })
 
-  app.patch("/games/:gameId", (req: express.Request, res: express.Response) => {
+  app.patch("/games/:gameId", (req: Request, res: Response) => {
     res.json({
       result: "Not implemented",
     })
@@ -46,12 +52,21 @@ export const createIndexer = async () => {
     await writeFile(dbFile, JSON.stringify(db, null, 4))
   }
 
-  const init = async () => {
+  const init = async() => {
+    client = await CheckersStargateClient.connect(process.env.RPC_URL!)
+    console.log("Connected to chain-id:", await client.getChainId())
     setTimeout(poll, 1)
   }
 
-  const poll = async () => {
-    console.log(new Date(Date.now()).toISOString(), "TODO poll")
+  const poll = async() => {
+    const currentHeight = await client.getHeight()
+    console.log(
+      new Date(Date.now()).toISOString(),
+      "Current heights:",
+      db.status.block.height,
+      "<=",
+      currentHeight,
+    )
     timer = setTimeout(poll, pollIntervalMs)
   }
 

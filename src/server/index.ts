@@ -1,1 +1,1 @@
-require("./indexer").createIndexer().then(console.log).catch(console.error)
+require("./indexer").createIndexer().catch(console.error)
