@@ -1,6 +1,6 @@
 import { writeFile } from "fs/promises"
 import { Server } from "http"
-import express, { Express, Request, Response } from "express"
+import * as express from "express"
 import { DbType } from "./types"
 
 export const createIndexer = async () => {
@@ -10,14 +10,14 @@ export const createIndexer = async () => {
   const pollIntervalMs = 5_000 // 5 seconds
   let timer: NodeJS.Timer | undefined
 
-  const app: Express = express()
-  app.get("/", (req: Request, res: Response) => {
+  const app: express.Express = express()
+  app.get("/", (req: express.Request, res: express.Response) => {
     res.send({
       error: "Not implemented",
     })
   })
 
-  app.get("/status", (req: Request, res: Response) => {
+  app.get("/status", (req: express.Request, res: express.Response) => {
     res.json({
       block: {
         height: db.status.block.height,
@@ -25,18 +25,18 @@ export const createIndexer = async () => {
     })
   })
 
-  app.get("/players/:playerAddress", (req: Request, res: Response) => {
+  app.get("/players/:playerAddress", (req: express.Request, res: express.Response) => {
     res.json({
       gameCount: db.players[req.params.playerAddress]?.gameIds?.length ?? 0,
       gameIds: db.players[req.params.playerAddress]?.gameIds ?? [],
     })
   })
 
-  app.get("/players/:playerAddress/gameIds", (req: Request, res: Response) => {
+  app.get("/players/:playerAddress/gameIds", (req: express.Request, res: express.Response) => {
     res.json(db.players[req.params.playerAddress]?.gameIds ?? [])
   })
 
-  app.patch("/games/:gameId", (req: Request, res: Response) => {
+  app.patch("/games/:gameId", (req: express.Request, res: express.Response) => {
     res.json({
       result: "Not implemented",
     })
