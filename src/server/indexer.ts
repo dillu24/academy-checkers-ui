@@ -50,7 +50,7 @@ export const createIndexer = async () => {
 
   app.patch("/games/:gameId", async (req: Request, res: Response) => {
     const found = await patchGame(req.params.gameId)
-    if (!found) res.status(404)
+    if (!found) res.status(404).send()
     else {
       res.json({
         result: "Thank you",
@@ -213,8 +213,11 @@ export const createIndexer = async () => {
   }
 
   const patchGame = async(gameId: string): Promise<boolean> => {
-    const storedGame: StoredGame | undefined = await client.checkersQueryClient?.checkers
-      .getStoredGame(gameId)
+    let storedGame: StoredGame | undefined
+    try{
+      storedGame = await client.checkersQueryClient?.checkers
+        .getStoredGame(gameId)
+    } catch (e) {}
     const cachedGame: GameInfo | undefined = db.games[gameId]
     if (!storedGame && cachedGame) {
       console.log(
