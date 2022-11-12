@@ -1,7 +1,7 @@
 import {writeFile} from "fs/promises"
 import {Server} from "http"
 import express, {Express, Request, Response} from "express"
-import {DbType, PlayerInfo} from "./types"
+import {DbType, GameInfo, PlayerInfo} from "./types"
 import {config} from "dotenv"
 import {Block, IndexedTx} from "@cosmjs/stargate";
 import {sha256} from "@cosmjs/crypto"
@@ -9,6 +9,7 @@ import {toHex} from "@cosmjs/encoding"
 import {ABCIMessageLog, StringEvent} from "cosmjs-types/cosmos/base/abci/v1beta1/abci"
 import {Attribute} from "@cosmjs/stargate/build/logs";
 import {IndexerStargateClient} from "./indexer_stargateclient";
+import {StoredGame} from "../types/generated/checkers/stored_game";
 
 config()
 
@@ -47,10 +48,14 @@ export const createIndexer = async () => {
     res.json(db.players[req.params.playerAddress]?.gameIds ?? [])
   })
 
-  app.patch("/games/:gameId", (req: Request, res: Response) => {
-    res.json({
-      result: "Not implemented",
-    })
+  app.patch("/games/:gameId", async (req: Request, res: Response) => {
+    const found = await patchGame(req.params.gameId)
+    if (!found) res.status(404)
+    else {
+      res.json({
+        result: "Thank you",
+      })
+    }
   })
 
   const saveDb = async () => {
@@ -205,6 +210,61 @@ export const createIndexer = async () => {
     const indexInRed: number = redGames.indexOf(forfeitId)
     if (0 <= indexInRed) redGames.splice(indexInRed, 1)
     if (db.games[forfeitId]) db.games[forfeitId].deleted = true
+  }
+
+  const patchGame = async(gameId: string): Promise<boolean> => {
+    const storedGame: StoredGame | undefined = await client.checkersQueryClient?.checkers
+      .getStoredGame(gameId)
+    const cachedGame: GameInfo | undefined = db.games[gameId]
+    if (!storedGame && cachedGame) {
+      console.log(
+        `Patch game: deleted, ${gameId}, black: ${cachedGame.blackAddress}, red: ${
+          cachedGame.redAddress}`,
+      )
+      const blackGames: string[] = db.players[cachedGame.blackAddress]?.gameIds ?? []
+      const redGames: string[] = db.players[cachedGame.redAddress]?.gameIds ?? []
+      const indexInBlack: number = blackGames.indexOf(gameId)
+      if (0 <= indexInBlack) blackGames.splice(indexInBlack, 1)
+      const indexInRed: number = redGames.indexOf(gameId)
+      if (0 <= indexInRed) redGames.splice(indexInRed, 1)
+      cachedGame.deleted = true
+      return true
+    } else if (!storedGame) {
+      console.log(`Patch game: not found, ${gameId}`)
+      return false
+    } else if (storedGame.winner !== "*") {
+      const blackGames: string[] = db.players[storedGame.black]?.gameIds ?? []
+      const redGames: string[] = db.players[storedGame.red]?.gameIds ?? []
+      console.log(
+        `Patch game: ended, ${gameId}, black: ${storedGame.black}, red: ${
+          storedGame.red}, winner: ${storedGame.winner}`,
+      )
+      const indexInBlack: number = blackGames.indexOf(gameId)
+      if (0 <= indexInBlack) blackGames.splice(indexInBlack, 1)
+      const indexInRed: number = redGames.indexOf(gameId)
+      if (0 <= indexInRed) redGames.splice(indexInRed, 1)
+      return true
+    } else {
+      const blackInfo: PlayerInfo = db.players[storedGame.black] ?? {
+        gameIds: []
+      }
+      const redInfo: PlayerInfo = db.players[storedGame.red] ?? {
+        gameIds: []
+      }
+      console.log(`Patch game: new, ${gameId}, black: ${storedGame.black}, red: ${storedGame.red}`)
+      const notInBlack = blackInfo.gameIds.indexOf(gameId) < 0
+      const notInRed = redInfo.gameIds.indexOf(gameId) < 0
+      if (notInBlack) blackInfo.gameIds.push(gameId)
+      if (notInRed) redInfo.gameIds.push(gameId)
+      db.players[storedGame.black] = blackInfo
+      db.players[storedGame.red] = redInfo
+      db.games[gameId] = {
+        redAddress: storedGame.red,
+        blackAddress: storedGame.black,
+        deleted: false,
+      }
+      return true
+    }
   }
 
   process.on("SIGINT", () => {
