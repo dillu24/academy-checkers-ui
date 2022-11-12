@@ -84,9 +84,9 @@ export const createIndexer = async () => {
     let txIndex = 0
     while (txIndex < block.txs.length) {
       const txHash: string = toHex(sha256(block.txs[txIndex])).toUpperCase()
-      const indexedTx: IndexedTx | null = await client.getTx(txHash)
-      if (!indexedTx) throw new Error(`Could not find indexed tx: ${txHash}`)
-      await handleTx(indexedTx)
+      const indexed: IndexedTx | null = await client.getTx(txHash)
+      if (!indexed) throw new Error(`Could not find indexed tx: ${txHash}`)
+      await handleTx(indexed)
       txIndex++
     }
   }
@@ -97,7 +97,7 @@ export const createIndexer = async () => {
     await handleEvents(events)
   }
 
-  const handleEvents = async (events: StringEvent[]) => {
+  const handleEvents = async (events: StringEvent[]): Promise<void> => {
     try {
       let eventIndex = 0
       while (eventIndex < events.length) {
@@ -105,16 +105,18 @@ export const createIndexer = async () => {
         eventIndex++
       }
     } catch (e) {
-      console.log(e)
+      // Skipping if the handling failed. Most likely the transaction failed.
     }
   }
 
-  const handleEvent = async (event: StringEvent) => {
+  const handleEvent = async (event: StringEvent): Promise<void> => {
     if (event.type == "new-game-created") {
       await handleEventCreate(event)
-    } else if (event.type == "game-reject") {
+    }
+    if (event.type == "game-rejected") {
       await handleEventReject(event)
-    } else if (event.type == "move-played") {
+    }
+    if (event.type == "move-played") {
       await handleEventPlay(event)
     }
   }
@@ -123,19 +125,19 @@ export const createIndexer = async () => {
     return attributes.find((attribute: Attribute) => attribute.key === key)?.value
   }
 
-  const handleEventCreate = async (event: StringEvent) => {
+  const handleEventCreate = async (event: StringEvent): Promise<void> => {
     const newId: string | undefined = getAttributeValueByKey(event.attributes, "game-index")
-    if (!newId) throw new Error("Create event missing game-index")
+    if (!newId) throw new Error(`Create event missing game-index`)
     const blackAddress: string | undefined = getAttributeValueByKey(event.attributes, "black")
-    if (!blackAddress) throw new Error("Create event missing black address")
+    if (!blackAddress) throw new Error(`Create event missing black address`)
     const redAddress: string | undefined = getAttributeValueByKey(event.attributes, "red")
-    if (!redAddress) throw new Error("Create event missing red address")
-    console.log(`New game: ${newId}, black: ${blackAddress}, red:${redAddress}`)
+    if (!redAddress) throw new Error(`Create event missing red address`)
+    console.log(`New game: ${newId}, black: ${blackAddress}, red: ${redAddress}`)
     const blackInfo: PlayerInfo = db.players[blackAddress] ?? {
-      gameIds: []
+      gameIds: [],
     }
     const redInfo: PlayerInfo = db.players[redAddress] ?? {
-      gameIds: []
+      gameIds: [],
     }
     if (blackInfo.gameIds.indexOf(newId) < 0) blackInfo.gameIds.push(newId)
     if (redInfo.gameIds.indexOf(newId) < 0) redInfo.gameIds.push(newId)
@@ -144,16 +146,16 @@ export const createIndexer = async () => {
     db.games[newId] = {
       redAddress: redAddress,
       blackAddress: blackAddress,
-      deleted: false
+      deleted: false,
     }
   }
 
-  const handleEventReject = async (event: StringEvent) => {
+  const handleEventReject = async (event: StringEvent): Promise<void> => {
     const rejectedId: string | undefined = getAttributeValueByKey(event.attributes, "game-index")
-    if (!rejectedId) throw new Error("Reject event missing game-index")
+    if (!rejectedId) throw new Error(`Reject event missing game-index`)
     const blackAddress: string | undefined = db.games[rejectedId]?.blackAddress
     const redAddress: string | undefined = db.games[rejectedId]?.redAddress
-    console.log(`Reject game: ${rejectedId}, black: ${blackAddress}, red:${redAddress}`)
+    console.log(`Reject game: ${rejectedId}, black: ${blackAddress}, red: ${redAddress}`)
     const blackGames: string[] = db.players[blackAddress]?.gameIds ?? []
     const redGames: string[] = db.players[redAddress]?.gameIds ?? []
     const indexInBlack: number = blackGames.indexOf(rejectedId)
@@ -163,16 +165,15 @@ export const createIndexer = async () => {
     if (db.games[rejectedId]) db.games[rejectedId].deleted = true
   }
 
-  const handleEventPlay = async (event: StringEvent) => {
+  const handleEventPlay = async (event: StringEvent): Promise<void> => {
     const playedId: string | undefined = getAttributeValueByKey(event.attributes, "game-index")
-    if (!playedId) throw new Error("Play event missing game-index")
+    if (!playedId) throw new Error(`Play event missing game-index`)
     const winner: string | undefined = getAttributeValueByKey(event.attributes, "winner")
-    if(!winner) throw new Error("Play event missing winner")
-    if(winner === "*") return
+    if (!winner) throw new Error("Play event missing winner")
+    if (winner === "*") return
     const blackAddress: string | undefined = db.games[playedId]?.blackAddress
     const redAddress: string | undefined = db.games[playedId]?.redAddress
-    console.log(
-      `Win game: ${playedId}, black: ${blackAddress}, red: ${redAddress}, winner: ${winner}`)
+    console.log(`Win game: ${playedId}, black: ${blackAddress}, red: ${redAddress}, winner: ${winner}`)
     const blackGames: string[] = db.players[blackAddress]?.gameIds ?? []
     const redGames: string[] = db.players[redAddress]?.gameIds ?? []
     const indexInBlack: number = blackGames.indexOf(playedId)
