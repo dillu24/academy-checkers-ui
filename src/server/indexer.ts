@@ -1,9 +1,14 @@
-import { writeFile } from "fs/promises"
-import { Server } from "http"
-import express, { Express, Request, Response } from "express"
-import { DbType } from "./types"
-import { config } from "dotenv"
-import { CheckersStargateClient } from "../checkers_stargateclient"
+import {writeFile} from "fs/promises"
+import {Server} from "http"
+import express, {Express, Request, Response} from "express"
+import {DbType, PlayerInfo} from "./types"
+import {config} from "dotenv"
+import {CheckersStargateClient} from "../checkers_stargateclient"
+import {Block, IndexedTx} from "@cosmjs/stargate";
+import {sha256} from "@cosmjs/crypto"
+import {toHex} from "@cosmjs/encoding"
+import {ABCIMessageLog, StringEvent} from "cosmjs-types/cosmos/base/abci/v1beta1/abci"
+import {Attribute} from "@cosmjs/stargate/build/logs";
 
 config()
 
@@ -52,22 +57,128 @@ export const createIndexer = async () => {
     await writeFile(dbFile, JSON.stringify(db, null, 4))
   }
 
-  const init = async() => {
+  const init = async () => {
     client = await CheckersStargateClient.connect(process.env.RPC_URL!)
     console.log("Connected to chain-id:", await client.getChainId())
     setTimeout(poll, 1)
   }
 
-  const poll = async() => {
+  const poll = async () => {
     const currentHeight = await client.getHeight()
-    console.log(
-      new Date(Date.now()).toISOString(),
-      "Current heights:",
-      db.status.block.height,
-      "<=",
-      currentHeight,
-    )
+    if (db.status.block.height <= currentHeight - 100)
+      console.log(`Catching up ${db.status.block.height}..${currentHeight}`)
+    while (db.status.block.height < currentHeight) {
+      const processing = db.status.block.height + 1
+      process.stdout.cursorTo(0)
+      const block: Block = await client.getBlock(processing)
+      process.stdout.write(`Handling block: ${processing} with ${block.txs.length} txs`)
+      await handleBlock(block)
+      db.status.block.height = processing
+    }
+    await saveDb()
     timer = setTimeout(poll, pollIntervalMs)
+  }
+
+  const handleBlock = async (block: Block) => {
+    if (0 < block.txs.length) console.log("")
+    let txIndex = 0
+    while (txIndex < block.txs.length) {
+      const txHash: string = toHex(sha256(block.txs[txIndex])).toUpperCase()
+      const indexedTx: IndexedTx | null = await client.getTx(txHash)
+      if (!indexedTx) throw new Error(`Could not find indexed tx: ${txHash}`)
+      await handleTx(indexedTx)
+      txIndex++
+    }
+  }
+
+  const handleTx = async (indexed: IndexedTx) => {
+    const rawLog: any = JSON.parse(indexed.rawLog)
+    const events: StringEvent[] = rawLog.flatMap((log: ABCIMessageLog) => log.events)
+    await handleEvents(events)
+  }
+
+  const handleEvents = async (events: StringEvent[]) => {
+    try {
+      let eventIndex = 0
+      while (eventIndex < events.length) {
+        await handleEvent(events[eventIndex])
+        eventIndex++
+      }
+    } catch (e) {
+      console.log(e)
+    }
+  }
+
+  const handleEvent = async (event: StringEvent) => {
+    if (event.type == "new-game-created") {
+      await handleEventCreate(event)
+    } else if (event.type == "game-reject") {
+      await handleEventReject(event)
+    } else if (event.type == "move-played") {
+      await handleEventPlay(event)
+    }
+  }
+
+  const getAttributeValueByKey = (attributes: Attribute[], key: string): string | undefined => {
+    return attributes.find((attribute: Attribute) => attribute.key === key)?.value
+  }
+
+  const handleEventCreate = async (event: StringEvent) => {
+    const newId: string | undefined = getAttributeValueByKey(event.attributes, "game-index")
+    if (!newId) throw new Error("Create event missing game-index")
+    const blackAddress: string | undefined = getAttributeValueByKey(event.attributes, "black")
+    if (!blackAddress) throw new Error("Create event missing black address")
+    const redAddress: string | undefined = getAttributeValueByKey(event.attributes, "red")
+    if (!redAddress) throw new Error("Create event missing red address")
+    console.log(`New game: ${newId}, black: ${blackAddress}, red:${redAddress}`)
+    const blackInfo: PlayerInfo = db.players[blackAddress] ?? {
+      gameIds: []
+    }
+    const redInfo: PlayerInfo = db.players[redAddress] ?? {
+      gameIds: []
+    }
+    if (blackInfo.gameIds.indexOf(newId) < 0) blackInfo.gameIds.push(newId)
+    if (redInfo.gameIds.indexOf(newId) < 0) redInfo.gameIds.push(newId)
+    db.players[blackAddress] = blackInfo
+    db.players[redAddress] = redInfo
+    db.games[newId] = {
+      redAddress: redAddress,
+      blackAddress: blackAddress,
+      deleted: false
+    }
+  }
+
+  const handleEventReject = async (event: StringEvent) => {
+    const rejectedId: string | undefined = getAttributeValueByKey(event.attributes, "game-index")
+    if (!rejectedId) throw new Error("Reject event missing game-index")
+    const blackAddress: string | undefined = db.games[rejectedId]?.blackAddress
+    const redAddress: string | undefined = db.games[rejectedId]?.redAddress
+    console.log(`Reject game: ${rejectedId}, black: ${blackAddress}, red:${redAddress}`)
+    const blackGames: string[] = db.players[blackAddress]?.gameIds ?? []
+    const redGames: string[] = db.players[redAddress]?.gameIds ?? []
+    const indexInBlack: number = blackGames.indexOf(rejectedId)
+    if (0 <= indexInBlack) blackGames.splice(indexInBlack, 1)
+    const indexInRed: number = redGames.indexOf(rejectedId)
+    if (0 <= indexInRed) redGames.splice(indexInRed, 1)
+    if (db.games[rejectedId]) db.games[rejectedId].deleted = true
+  }
+
+  const handleEventPlay = async (event: StringEvent) => {
+    const playedId: string | undefined = getAttributeValueByKey(event.attributes, "game-index")
+    if (!playedId) throw new Error("Play event missing game-index")
+    const winner: string | undefined = getAttributeValueByKey(event.attributes, "winner")
+    if(!winner) throw new Error("Play event missing winner")
+    if(winner === "*") return
+    const blackAddress: string | undefined = db.games[playedId]?.blackAddress
+    const redAddress: string | undefined = db.games[playedId]?.redAddress
+    console.log(
+      `Win game: ${playedId}, black: ${blackAddress}, red: ${redAddress}, winner: ${winner}`)
+    const blackGames: string[] = db.players[blackAddress]?.gameIds ?? []
+    const redGames: string[] = db.players[redAddress]?.gameIds ?? []
+    const indexInBlack: number = blackGames.indexOf(playedId)
+    if (0 <= indexInBlack) blackGames.splice(indexInBlack, 1)
+    const indexInRed: number = redGames.indexOf(playedId)
+    if (0 <= indexInRed) redGames.splice(indexInRed, 1)
   }
 
   process.on("SIGINT", () => {
